@@ -8,6 +8,11 @@ you without looking at the screen.
   `ctrl+alt+N` — amber while its agent is blocked on you, green when it's done.
 - **The top-right key** glows amber while any agent is blocked; bind it to the
   `next-agent` action and one press takes you there.
+- **The Q–P row** is a progress bar for
+  [herdr-pomodoro](https://github.com/jwarykowski/herdr-pomodoro): red keys
+  drain through a work round, blue through a break.
+- **Party lights**: the `party` action cycles the whole board through a
+  rainbow for a few seconds. Hook it to a merged PR or a finished pomodoro.
 
 The rest of the board keeps your Oryx colours; only those keys change, and
 everything is restored when the watcher stops or you toggle it off.
@@ -35,6 +40,7 @@ The watcher starts with each herdr session and exits when herdr stops.
 | action | does |
 |---|---|
 | `jwarykowski.herdr-zsa-lights.next-agent` | focus the next blocked agent, else the next done one; repeat to cycle |
+| `jwarykowski.herdr-zsa-lights.party` | party lights for a few seconds |
 | `jwarykowski.herdr-zsa-lights.toggle` | lights off/on |
 | `jwarykowski.herdr-zsa-lights.restart` | restart the watcher, e.g. after a config change |
 
@@ -55,6 +61,20 @@ command = "jwarykowski.herdr-zsa-lights.toggle"
 description = "toggle keyboard agent lights"
 ```
 
+## Party on events
+
+`party` is made for hooks. With
+[herdr-gh](https://github.com/jwarykowski/herdr-gh), a merged PR throws a
+party from `$(herdr plugin config-dir jwarykowski.herdr-gh)/hooks/pr.merged`:
+
+```sh
+#!/bin/sh
+herdr plugin action invoke party --plugin jwarykowski.herdr-zsa-lights
+```
+
+The same line in herdr-pomodoro's `hooks/pomodoro.work_done` celebrates a
+finished round.
+
 ## Configuration
 
 Optional. Put overrides in `config.env` inside the plugin config directory
@@ -63,8 +83,8 @@ action. See [`config.env.example`](config.env.example).
 
 ## Keyboard maps
 
-[`maps/`](maps) holds each model's LED index for keys 1–9 and the top-right
-key, derived from ZSA's QMK `rgb_matrix` layout. The Moonlander map is in daily
+[`maps/`](maps) holds each model's LED index for keys 1–9, the top-right key
+and the Q–P row, derived from ZSA's QMK `rgb_matrix` layout. The Moonlander map is in daily
 use; the Voyager map is untested — corrections welcome. A custom layout can
 override the indices in `config.env`.
 

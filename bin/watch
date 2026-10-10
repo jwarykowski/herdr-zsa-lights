@@ -3,11 +3,13 @@
 # kontroll + keymapp:
 #   number key N  workspace N (as ctrl+alt+N): blocked / done colour
 #   top-right     blocked colour while any agent waits (next-agent jumps there)
+#   Q-P row       herdr-pomodoro's timer, a bar that drains as the phase runs
 #
 # usage: watch start    spawn the watcher in the background (startup hook)
 #        watch stop     stop it, restoring the keyboard's own colours
 #        watch run      watch in the foreground until herdr goes away
 #        watch toggle   switch the lights off/on
+#        watch party    a few seconds of party lights over the whole board
 set -uo pipefail
 
 # plugin commands inherit herdr's environment; add the usual tool locations
@@ -20,12 +22,21 @@ state_dir="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr
 config_dir="${HERDR_PLUGIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-zsa-lights}"
 pidfile="$state_dir/watcher.pid"
 disabled="$state_dir/disabled"
+# while an effect (party) owns the board the watcher doesn't paint; the
+# directory holds the effect's pid
+effect="$state_dir/effect"
+# herdr-pomodoro's state file (see its README)
+pomodoro_state="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-pomodoro/state.json"
 
 # defaults; override any of them in $config_dir/config.env
 HERDR_ZSA_MODEL=moonlander
 HERDR_ZSA_BLOCKED="#ff8800"
 HERDR_ZSA_DONE="#00cc44"
 HERDR_ZSA_INTERVAL=2
+HERDR_ZSA_POMODORO_WORK="#cc0000"
+HERDR_ZSA_POMODORO_BREAK="#0066ff"
+HERDR_ZSA_PARTY_SECONDS=4
+HERDR_ZSA_PARTY_COLOURS="#ff0000 #ff8800 #ffee00 #00cc44 #00ccff #0044ff #aa00ff #ff00aa"
 # shellcheck source=/dev/null
 [[ -f "$config_dir/config.env" ]] && source "$config_dir/config.env"
 
@@ -38,6 +49,8 @@ fi
 source "$map"
 NUMBER_LEDS="${HERDR_ZSA_NUMBER_LEDS:-$NUMBER_LEDS}"
 JUMP_LED="${HERDR_ZSA_JUMP_LED:-$JUMP_LED}"
+# empty turns the pomodoro bar off
+POMODORO_LEDS="${HERDR_ZSA_POMODORO_LEDS-${POMODORO_LEDS:-}}"
 
 notify() {
   "$herdr" notification show "$1" >/dev/null 2>&1 || true
@@ -58,6 +71,48 @@ frame() {
            | "\($leds[.number - 1]):\(if .agent_status == "blocked" then $blocked else $done end)")
        + (if any(.agent_status == "blocked") then ["\($jump):\($blocked)"] else [] end))
     | .[]' <<<"$workspaces"
+}
+
+# "led:colour" pairs for the pomodoro bar: the share of the phase left, in
+# keys, rounded up so the last key stays lit until the phase ends
+pomodoro_frame() {
+  [[ -n "$POMODORO_LEDS" && -f "$pomodoro_state" ]] || return 0
+  local phase start ends colour total left lit=0 i=0 led
+  read -r phase start ends < <(jq -r '"\(.phase) \(.started_at) \(.ends_at)"' "$pomodoro_state" 2>/dev/null)
+  case "$phase" in
+    work) colour=$HERDR_ZSA_POMODORO_WORK ;;
+    break | long_break) colour=$HERDR_ZSA_POMODORO_BREAK ;;
+    *) return 0 ;;
+  esac
+  local -a leds
+  read -r -a leds <<<"$POMODORO_LEDS"
+  total=$((ends - start)) left=$((ends - $(date +%s)))
+  ((total > 0 && left > 0)) && lit=$(((left * ${#leds[@]} + total - 1) / total))
+  for led in "${leds[@]}"; do
+    ((i++ < lit)) && echo "$led:$colour"
+  done
+}
+
+effect_running() {
+  [[ -d "$effect" ]] && kill -0 "$(cat "$effect/pid" 2>/dev/null)" 2>/dev/null
+}
+
+party() {
+  [[ -f "$disabled" ]] && return 0
+  mkdir -p "$state_dir"
+  effect_running && return 0
+  rm -rf "$effect"
+  mkdir "$effect" 2>/dev/null || return 0
+  echo $$ >"$effect/pid"
+  # restore and hand the board back; the watcher repaints on its next tick
+  trap 'kontroll restore-rgb-leds >/dev/null 2>&1; rm -rf "$effect"' EXIT
+  local -a colours
+  read -r -a colours <<<"$HERDR_ZSA_PARTY_COLOURS"
+  local frames=$((HERDR_ZSA_PARTY_SECONDS * 8)) i
+  for ((i = 0; i < frames; i++)); do
+    kontroll set-rgb-all --color "${colours[i % ${#colours[@]}]}" >/dev/null 2>&1 || return 0
+    sleep 0.125
+  done
 }
 
 paint() {
@@ -82,7 +137,14 @@ run() {
   while ((misses < 5)); do
     if [[ -f "$disabled" ]]; then
       current="" misses=0
+    elif effect_running; then
+      # leave the board to the effect, and repaint once it ends
+      last="(effect)"
+      sleep "$HERDR_ZSA_INTERVAL" &
+      wait $!
+      continue
     elif current=$(frame); then
+      current+=$'\n'$(pomodoro_frame)
       misses=0
     else
       current="" misses=$((misses + 1))
@@ -121,6 +183,7 @@ case "${1:-}" in
     done
     ;;
   run) run ;;
+  party) party ;;
   toggle)
     mkdir -p "$state_dir"
     if [[ -f "$disabled" ]]; then
@@ -133,7 +196,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: watch start|stop|run|toggle" >&2
+    echo "usage: watch start|stop|run|toggle|party" >&2
     exit 1
     ;;
 esac
