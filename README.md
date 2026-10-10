@@ -1,3 +1,8 @@
+<table>
+<tr>
+<td width="200" valign="top"><img src="assets/herdr-zsa-lights.png" alt="herdr-zsa-lights" width="180"></td>
+<td valign="top">
+
 # herdr-zsa-lights
 
 A [herdr](https://herdr.dev) plugin that shows agent status on a
@@ -104,5 +109,9 @@ agent needs you, you can [sponsor its
 development](https://github.com/sponsors/jwarykowski).
 
 ## License
+
+</td>
+</tr>
+</table>
 
 MIT
