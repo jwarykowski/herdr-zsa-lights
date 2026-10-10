@@ -4,17 +4,19 @@
 #   number key N  workspace N (as ctrl+alt+N): blocked / done colour
 #   top-right     blocked colour while any agent waits (next-agent jumps there)
 #   Q-P row       herdr-pomodoro's timer, a bar that drains as the phase runs
+#   rows below    music bars from keybars, while the music action has it on
 #
 # usage: watch start    spawn the watcher in the background (startup hook)
 #        watch stop     stop it, restoring the keyboard's own colours
 #        watch run      watch in the foreground until herdr goes away
 #        watch toggle   switch the lights off/on
 #        watch party    a few seconds of party lights over the whole board
+#        watch music    start/stop keybars, a music equaliser below the number row
 set -uo pipefail
 
 # plugin commands inherit herdr's environment; add the usual tool locations
 # (kontroll is usually built with cargo, jq may come from homebrew)
-PATH="$PATH:$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+PATH="$PATH:$HOME/.cargo/bin:$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
 
 herdr="${HERDR_BIN_PATH:-herdr}"
 root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -25,6 +27,8 @@ disabled="$state_dir/disabled"
 # while an effect (party) owns the board the watcher doesn't paint; the
 # directory holds the effect's pid
 effect="$state_dir/effect"
+# keybars' pid while the music bars are on
+music="$state_dir/music.pid"
 # herdr-pomodoro's state file (see its README)
 pomodoro_state="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-pomodoro/state.json"
 
@@ -37,6 +41,8 @@ HERDR_ZSA_POMODORO_WORK="#cc0000"
 HERDR_ZSA_POMODORO_BREAK="#0066ff"
 HERDR_ZSA_PARTY_SECONDS=4
 HERDR_ZSA_PARTY_COLOURS="#ff0000 #ff8800 #ffee00 #00cc44 #00ccff #0044ff #aa00ff #ff00aa"
+HERDR_ZSA_KEYBARS=keybars
+HERDR_ZSA_KEYBARS_ARGS=""
 # shellcheck source=/dev/null
 [[ -f "$config_dir/config.env" ]] && source "$config_dir/config.env"
 
@@ -123,12 +129,55 @@ paint() {
   done
 }
 
+# overlay paints $1 without restoring the board, which would wipe keybars'
+# bars: keys lit in $2 (the last frame) but not in $1 go dark, since there is
+# no per-key restore. It repaints every tick: keybars resets the board when
+# the music goes quiet.
+overlay() {
+  local pair
+  for pair in $2; do
+    grep -q "^${pair%%:*}:" <<<"$1" ||
+      kontroll set-rgb --led "${pair%%:*}" --color "#000000" >/dev/null 2>&1
+  done
+  for pair in $1; do
+    kontroll set-rgb --led "${pair%%:*}" --color "${pair#*:}" >/dev/null 2>&1 || return 1
+  done
+}
+
+music_running() {
+  [[ -f "$music" ]] && kill -0 "$(cat "$music")" 2>/dev/null
+}
+
+# music toggles keybars; the watcher keeps the agent keys on top of it
+music() {
+  mkdir -p "$state_dir"
+  if music_running; then
+    kill "$(cat "$music")" 2>/dev/null
+    rm -f "$music"
+    notify "music bars off"
+    return 0
+  fi
+  if [[ -f "$disabled" ]]; then
+    notify "keyboard lights are off; toggle them on first"
+    return 0
+  fi
+  if ! command -v "$HERDR_ZSA_KEYBARS" >/dev/null; then
+    notify "music bars need keybars: go install github.com/jwarykowski/keybars@latest"
+    return 0
+  fi
+  # shellcheck disable=SC2086 # extra args are meant to split
+  nohup "$HERDR_ZSA_KEYBARS" $HERDR_ZSA_KEYBARS_ARGS >"$state_dir/music.log" 2>&1 &
+  echo $! >"$music"
+  disown
+  notify "music bars on"
+}
+
 running() {
   [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 
 run() {
-  local last="" current misses=0
+  local last="" current misses=0 last_music=0
   mkdir -p "$state_dir"
   running || echo $$ >"$pidfile" # started directly (start already wrote it)
   trap 'kontroll restore-rgb-leds >/dev/null 2>&1; rm -f "$pidfile"; exit 0' INT TERM
@@ -144,13 +193,21 @@ run() {
       wait $!
       continue
     elif current=$(frame); then
-      current+=$'\n'$(pomodoro_frame)
+      # the pomodoro bar shares its row with the music bars: hide it then
+      music_running || current+=$'\n'$(pomodoro_frame)
       misses=0
     else
       current="" misses=$((misses + 1))
     fi
+    if music_running; then
+      # paint over keybars every tick, never restoring the board
+      overlay "$current" "$last" && last="$current"
+      last_music=1
+    elif ((last_music)); then
+      # keybars has stopped: start clean
+      paint "$current" && last="$current" last_music=0
     # repaint only on change; a failed paint (keymapp down) retries next tick
-    if [[ "$current" != "$last" ]]; then
+    elif [[ "$current" != "$last" ]]; then
       paint "$current" && last="$current"
     fi
     # background sleep + wait, so stop's TERM lands immediately
@@ -184,6 +241,7 @@ case "${1:-}" in
     ;;
   run) run ;;
   party) party ;;
+  music) music ;;
   toggle)
     mkdir -p "$state_dir"
     if [[ -f "$disabled" ]]; then
@@ -196,7 +254,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: watch start|stop|run|toggle|party" >&2
+    echo "usage: watch start|stop|run|toggle|party|music" >&2
     exit 1
     ;;
 esac
