@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# herdr-zsa-lights: show herdr agent status on a ZSA keyboard's backlight, via
+# kontroll + keymapp:
+#   number key N  workspace N (as ctrl+alt+N): blocked / done colour
+#   top-right     blocked colour while any agent waits (next-agent jumps there)
+#
+# usage: watch start    spawn the watcher in the background (startup hook)
+#        watch stop     stop it, restoring the keyboard's own colours
+#        watch run      watch in the foreground until herdr goes away
+#        watch toggle   switch the lights off/on
+set -uo pipefail
+
+# plugin commands inherit herdr's environment; add the usual tool locations
+# (kontroll is usually built with cargo, jq may come from homebrew)
+PATH="$PATH:$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+
+herdr="${HERDR_BIN_PATH:-herdr}"
+root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+state_dir="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-zsa-lights}"
+config_dir="${HERDR_PLUGIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-zsa-lights}"
+pidfile="$state_dir/watcher.pid"
+disabled="$state_dir/disabled"
+
+# defaults; override any of them in $config_dir/config.env
+HERDR_ZSA_MODEL=moonlander
+HERDR_ZSA_BLOCKED="#ff8800"
+HERDR_ZSA_DONE="#00cc44"
+HERDR_ZSA_INTERVAL=2
+# shellcheck source=/dev/null
+[[ -f "$config_dir/config.env" ]] && source "$config_dir/config.env"
+
+map="$root/maps/$HERDR_ZSA_MODEL.env"
+if [[ ! -f "$map" ]]; then
+  echo "unknown model '$HERDR_ZSA_MODEL' (see $root/maps)" >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+source "$map"
+NUMBER_LEDS="${HERDR_ZSA_NUMBER_LEDS:-$NUMBER_LEDS}"
+JUMP_LED="${HERDR_ZSA_JUMP_LED:-$JUMP_LED}"
+
+notify() {
+  "$herdr" notification show "$1" >/dev/null 2>&1 || true
+}
+
+# "led:colour" pairs for the current herdr state, one per line; fails when
+# herdr isn't reachable
+frame() {
+  local workspaces
+  workspaces=$("$herdr" workspace list 2>/dev/null) || return 1
+  jq -r \
+    --arg blocked "$HERDR_ZSA_BLOCKED" --arg 'done' "$HERDR_ZSA_DONE" \
+    --argjson leds "$(tr ' ' '\n' <<<"$NUMBER_LEDS" | jq -s .)" \
+    --argjson jump "$JUMP_LED" '
+    .result.workspaces
+    | (map(select(.number >= 1 and .number <= ($leds | length)
+                  and (.agent_status == "blocked" or .agent_status == "done"))
+           | "\($leds[.number - 1]):\(if .agent_status == "blocked" then $blocked else $done end)")
+       + (if any(.agent_status == "blocked") then ["\($jump):\($blocked)"] else [] end))
+    | .[]' <<<"$workspaces"
+}
+
+paint() {
+  kontroll restore-rgb-leds >/dev/null 2>&1 || return 1
+  local pair
+  for pair in $1; do
+    kontroll set-rgb --led "${pair%%:*}" --color "${pair#*:}" >/dev/null 2>&1
+  done
+}
+
+running() {
+  [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+}
+
+run() {
+  local last="" current misses=0
+  mkdir -p "$state_dir"
+  running || echo $$ >"$pidfile" # started directly (start already wrote it)
+  trap 'kontroll restore-rgb-leds >/dev/null 2>&1; rm -f "$pidfile"; exit 0' INT TERM
+  # exit once herdr has been unreachable for a few polls (server stopped);
+  # the startup hook spawns a fresh watcher with the next session
+  while ((misses < 5)); do
+    if [[ -f "$disabled" ]]; then
+      current="" misses=0
+    elif current=$(frame); then
+      misses=0
+    else
+      current="" misses=$((misses + 1))
+    fi
+    # repaint only on change; a failed paint (keymapp down) retries next tick
+    if [[ "$current" != "$last" ]]; then
+      paint "$current" && last="$current"
+    fi
+    # background sleep + wait, so stop's TERM lands immediately
+    sleep "$HERDR_ZSA_INTERVAL" &
+    wait $!
+  done
+  kontroll restore-rgb-leds >/dev/null 2>&1
+  rm -f "$pidfile"
+}
+
+case "${1:-}" in
+  start)
+    mkdir -p "$state_dir"
+    # herdr runs actions asynchronously, so two starts can overlap: mkdir is
+    # an atomic lock, and the pidfile is written here, not by the child later
+    mkdir "$state_dir/start.lock" 2>/dev/null || exit 0
+    trap 'rmdir "$state_dir/start.lock"' EXIT
+    running && exit 0
+    nohup "$0" run >"$state_dir/watcher.log" 2>&1 &
+    echo $! >"$pidfile"
+    disown
+    ;;
+  stop)
+    running || exit 0
+    kill "$(cat "$pidfile")"
+    # wait for the trap to clear the pidfile so a following start can run
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      running || break
+      sleep 0.2
+    done
+    ;;
+  run) run ;;
+  toggle)
+    mkdir -p "$state_dir"
+    if [[ -f "$disabled" ]]; then
+      rm -f "$disabled"
+      notify "keyboard lights on"
+    else
+      touch "$disabled"
+      kontroll restore-rgb-leds >/dev/null 2>&1
+      notify "keyboard lights off"
+    fi
+    ;;
+  *)
+    echo "usage: watch start|stop|run|toggle" >&2
+    exit 1
+    ;;
+esac
