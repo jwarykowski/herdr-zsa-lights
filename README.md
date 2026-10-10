@@ -99,8 +99,9 @@ override the indices in `config.env`.
 
 ## Support
 
-herdr-zsa-lights is free and MIT licensed. If your keyboard tells you when an agent needs you, you can
-[sponsor its development](https://github.com/sponsors/jwarykowski).
+herdr-zsa-lights is free and MIT licensed. If your keyboard tells you when an
+agent needs you, you can [sponsor its
+development](https://github.com/sponsors/jwarykowski).
 
 ## License
 
