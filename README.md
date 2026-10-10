@@ -83,9 +83,11 @@ action. See [`config.env.example`](config.env.example).
 
 ## Keyboard maps
 
-[`maps/`](maps) holds each model's LED index for keys 1–9, the top-right key
-and the Q–P row, derived from ZSA's QMK `rgb_matrix` layout. The Moonlander map is in daily
-use; the Voyager map is untested — corrections welcome. A custom layout can
+[`maps/`](maps) holds each model's key index for keys 1–9, the top-right key
+and the Q–P row, in Keymapp's order: each half numbered on its own, row by row
+from the left, inner column included (not the firmware's `rgb_matrix` LED
+order). The Moonlander map is checked on a real board; the Voyager map is
+untested — corrections welcome. A custom layout can
 override the indices in `config.env`.
 
 ## License
