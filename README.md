@@ -11,11 +11,17 @@ you without looking at the screen.
 - **The Q–P row** is a progress bar for
   [herdr-pomodoro](https://github.com/jwarykowski/herdr-pomodoro): red keys
   drain through a work round, blue through a break.
+- **Music bars**: the `music` action starts
+  [keybars](https://github.com/jwarykowski/keybars), a music equaliser on the
+  rows below the number row; the agent keys stay on top, and the pomodoro bar
+  steps aside until the music stops.
 - **Party lights**: the `party` action cycles the whole board through a
   rainbow for a few seconds. Hook it to a merged PR or a finished pomodoro.
 
-The rest of the board keeps your Oryx colours; only those keys change, and
-everything is restored when the watcher stops or you toggle it off.
+While any of these keys is lit, the rest of the board is dark: once Keymapp
+drives a key, the firmware shows only what its API sets (there is no per-key
+"show the layout here"). With nothing to show, the board keeps your Oryx
+colours, and they come back when the watcher stops or you toggle it off.
 
 ## Requirements
 
@@ -41,6 +47,7 @@ The watcher starts with each herdr session and exits when herdr stops.
 |---|---|
 | `jwarykowski.herdr-zsa-lights.next-agent` | focus the next blocked agent, else the next done one; repeat to cycle |
 | `jwarykowski.herdr-zsa-lights.party` | party lights for a few seconds |
+| `jwarykowski.herdr-zsa-lights.music` | music bars on/off (needs [keybars](https://github.com/jwarykowski/keybars): `go install github.com/jwarykowski/keybars@latest`, plus `cava`) |
 | `jwarykowski.herdr-zsa-lights.toggle` | lights off/on |
 | `jwarykowski.herdr-zsa-lights.restart` | restart the watcher, e.g. after a config change |
 

@@ -1,6 +1,6 @@
 id = "jwarykowski.herdr-zsa-lights"
 name = "ZSA lights"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.9.3"
 description = "Agent status on a ZSA keyboard: number key N lights when workspace N's agent is blocked or done, a jump-to-waiting-agent action, a pomodoro bar and party lights"
 platforms = ["linux", "macos"]
@@ -18,6 +18,11 @@ command = ["bin/next-agent"]
 id = "party"
 title = "ZSA lights: party lights for a few seconds"
 command = ["bin/watch", "party"]
+
+[[actions]]
+id = "music"
+title = "ZSA lights: music bars on / off (keybars)"
+command = ["bin/watch", "music"]
 
 [[actions]]
 id = "toggle"
