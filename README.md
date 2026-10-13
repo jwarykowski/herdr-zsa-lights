@@ -1,7 +1,4 @@
-<table>
-<tr>
-<td width="200" valign="top"><img src="assets/herdr-zsa-lights.png" alt="herdr-zsa-lights" width="180"></td>
-<td valign="top">
+<p align="center"><img src="assets/herdr-zsa-lights.svg" alt="herdr-zsa-lights" width="120"></p>
 
 # herdr-zsa-lights
 
@@ -109,9 +106,5 @@ agent needs you, you can [sponsor its
 development](https://github.com/sponsors/jwarykowski).
 
 ## License
-
-</td>
-</tr>
-</table>
 
 MIT
