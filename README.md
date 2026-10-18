@@ -2,6 +2,12 @@
 
 # herdr-zsa-lights
 
+> **Superseded by [herdr-keybars](https://code.warykowski.io/jwarykowski/herdr-keybars).**
+> It does the same through [keybars Pro](https://keybars.app/pro/)'s command
+> line: no Keymapp or kontroll, any keyboard keybars Pro drives, lights over
+> the music instead of blanking the board, and bridges to herdr-gh and
+> herdr-pomodoro. This plugin isn't developed further.
+
 A [herdr](https://herdr.dev) plugin that shows agent status on a
 [ZSA](https://www.zsa.io) keyboard's backlight, so you see which agent needs
 you without looking at the screen.
